@@ -2,9 +2,18 @@
 
 <template>
   <div class="game-container">
-    <!-- <h1 style="color: #667eea; margin-bottom: 20px">🐭 Rodents' Revenge 🐭</h1> -->
     <GameHeader :score="score" :level="level" :trapped-cats="trappedCats" :total-cats="totalCats" />
+
+    <StartMenu
+      v-if="showMenu"
+      @start-1p="startSinglePlayer"
+      @start-2p="startTwoPlayers"
+      @how-to="openHowTo"
+      @settings="openSettings"
+    />
+
     <GameBoard
+      v-else
       :grid="grid"
       :cats="cats"
       :mouse-pos="mousePos"
@@ -26,6 +35,7 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import GameBoard from './components/GameBoard.vue'
 import GameHeader from './components/GameHeader.vue'
+import StartMenu from './components/StartMenu.vue'
 
 const GRID_SIZE = 20
 const CELL_SIZE = 32
@@ -44,6 +54,7 @@ const gameOver = ref(false)
 const won = ref(false)
 const trappedCats = ref(0)
 let gameLoopInterval = null
+const showMenu = ref(true)
 
 // 🧮 COMPUTED
 const totalCats = computed(() => cats.value.length)
@@ -270,6 +281,26 @@ function startNewGame() {
   gameLoopInterval = setInterval(() => moveCats(), 500)
 }
 
+function startSinglePlayer() {
+  showMenu.value = false
+  level.value = 1
+  score.value = 0
+  startNewGame()
+}
+
+function startTwoPlayers() {
+  // Placeholder: keep menu open or implement 2P init later
+  alert('Two Players mode is work-in-progress.')
+}
+
+function openHowTo() {
+  alert('How to Play: Use arrow keys or WASD to move the mouse. Push blocks to trap cats on all four sides.')
+}
+
+function openSettings() {
+  alert('Settings coming soon.')
+}
+
 function restartGame() {
   level.value = 1
   score.value = 0
@@ -283,7 +314,7 @@ function nextLevel() {
 
 // 🎮 LIFECYCLE
 onMounted(() => {
-  startNewGame()
+  // Do not auto-start game; show menu first
   window.addEventListener('keydown', handleKeyDown)
 })
 
