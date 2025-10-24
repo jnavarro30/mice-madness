@@ -17,6 +17,8 @@
       :grid="grid"
       :cats="cats"
       :mouse-pos="mousePos"
+      :mouse2-pos="mouse2Pos"
+      :two-player="twoPlayer"
       :score="score"
       :level="level"
       :trapped-cats="trappedCats"
@@ -47,6 +49,8 @@ const CELL_TYPES = {
 
 const grid = ref([])
 const mousePos = reactive({ x: 7, y: 7 })
+const mouse2Pos = reactive({ x: 12, y: 12 })
+const twoPlayer = ref(false)
 const cats = ref([])
 const score = ref(0)
 const level = ref(1)
@@ -105,26 +109,34 @@ function handleKeyDown(e) {
   if (gameOver.value || won.value) return
 
   const key = e.key.toLowerCase()
-  let dx = 0,
-    dy = 0
 
-  if (key === 'arrowup' || key === 'w') dy = -1
-  else if (key === 'arrowdown' || key === 's') dy = 1
-  else if (key === 'arrowleft' || key === 'a') dx = -1
-  else if (key === 'arrowright' || key === 'd') dx = 1
-  else return
+  // Player 1: Arrow keys
+  if (key === 'arrowup') return moveMouseBy(mousePos, 0, -1)
+  if (key === 'arrowdown') return moveMouseBy(mousePos, 0, 1)
+  if (key === 'arrowleft') return moveMouseBy(mousePos, -1, 0)
+  if (key === 'arrowright') return moveMouseBy(mousePos, 1, 0)
 
-  e.preventDefault()
-  moveMouse(dx, dy)
+  // Player 2: WASD when enabled
+  if (twoPlayer.value) {
+    if (key === 'w') return moveMouseBy(mouse2Pos, 0, -1)
+    if (key === 's') return moveMouseBy(mouse2Pos, 0, 1)
+    if (key === 'a') return moveMouseBy(mouse2Pos, -1, 0)
+    if (key === 'd') return moveMouseBy(mouse2Pos, 1, 0)
+  }
 }
 
-function moveMouse(dx, dy) {
-  const newX = mousePos.x + dx
-  const newY = mousePos.y + dy
+function moveMouseBy(playerPos, dx, dy) {
+  const newX = playerPos.x + dx
+  const newY = playerPos.y + dy
 
   if (newX < 0 || newX >= GRID_SIZE || newY < 0 || newY >= GRID_SIZE) return
 
   const targetCell = grid.value[newY][newX]
+  // Prevent both players from occupying the same cell
+  if (twoPlayer.value) {
+    const other = playerPos === mousePos ? mouse2Pos : mousePos
+    if (other.x === newX && other.y === newY) return
+  }
 
   if (targetCell === CELL_TYPES.WALL) return
 
@@ -167,9 +179,9 @@ function moveMouse(dx, dy) {
         // Vacate the original adjacent cell where the mouse will step
         grid.value[newY][newX] = CELL_TYPES.EMPTY
 
-        // Move mouse into the space vacated by the first block
-        mousePos.x = newX
-        mousePos.y = newY
+        // Move player into the space vacated by the first block
+        playerPos.x = newX
+        playerPos.y = newY
         checkAllTrapped()
       }
       // If the next cell is not empty (wall or cat or out of bounds), cannot push
@@ -182,8 +194,9 @@ function moveMouse(dx, dy) {
     return
   }
 
-  mousePos.x = newX
-  mousePos.y = newY
+  playerPos.x = newX
+  playerPos.y = newY
+  checkAllTrapped()
 }
 
 function moveCats() {
@@ -194,19 +207,69 @@ function moveCats() {
 
     const dx = Math.sign(mousePos.x - cat.x)
     const dy = Math.sign(mousePos.y - cat.y)
-    const moves = []
 
-    if (dx !== 0) moves.push({ x: cat.x + dx, y: cat.y })
-    if (dy !== 0) moves.push({ x: cat.x, y: cat.y + dy })
-    if (dx !== 0 && dy !== 0) moves.push({ x: cat.x + dx, y: cat.y + dy })
+    // Primary preferred moves: axis-aligned toward the mouse, then diagonal
+    const primaryMoves = []
+    if (dx !== 0) primaryMoves.push({ x: cat.x + dx, y: cat.y })
+    if (dy !== 0) primaryMoves.push({ x: cat.x, y: cat.y + dy })
+    if (dx !== 0 && dy !== 0) primaryMoves.push({ x: cat.x + dx, y: cat.y + dy })
 
-    moves.sort(() => Math.random() - 0.5)
-
-    for (const move of moves) {
-      if (isValidCatMove(move.x, move.y)) {
+    let moved = false
+    for (const move of primaryMoves) {
+      if (canCatEnter(move.x, move.y)) {
+        // If moving onto cheese (trapped cat), revert it to active
+        reviveCheeseAt(move.x, move.y)
         cat.x = move.x
         cat.y = move.y
+        moved = true
         break
+      }
+    }
+
+    // If stuck (no primary move), try lateral wiggle: left/right relative to desired horizontal direction
+    if (!moved) {
+      const lateralMoves = []
+      // If trying to move horizontally, wiggle up/down
+      if (dx !== 0) {
+        lateralMoves.push({ x: cat.x, y: cat.y + 1 })
+        lateralMoves.push({ x: cat.x, y: cat.y - 1 })
+      }
+      // If trying to move vertically, wiggle left/right
+      if (dy !== 0) {
+        lateralMoves.push({ x: cat.x + 1, y: cat.y })
+        lateralMoves.push({ x: cat.x - 1, y: cat.y })
+      }
+
+      // Shuffle to avoid bias
+      lateralMoves.sort(() => Math.random() - 0.5)
+      for (const move of lateralMoves) {
+        if (canCatEnter(move.x, move.y)) {
+          reviveCheeseAt(move.x, move.y)
+          cat.x = move.x
+          cat.y = move.y
+          moved = true
+          break
+        }
+      }
+    }
+
+    // Fallback: try any adjacent orthogonal move to unstick
+    if (!moved) {
+      const anyMoves = [
+        { x: cat.x + 1, y: cat.y },
+        { x: cat.x - 1, y: cat.y },
+        { x: cat.x, y: cat.y + 1 },
+        { x: cat.x, y: cat.y - 1 },
+      ]
+      anyMoves.sort(() => Math.random() - 0.5)
+      for (const move of anyMoves) {
+        if (canCatEnter(move.x, move.y)) {
+          reviveCheeseAt(move.x, move.y)
+          cat.x = move.x
+          cat.y = move.y
+          moved = true
+          break
+        }
       }
     }
 
@@ -226,16 +289,71 @@ function isValidCatMove(x, y) {
   return true
 }
 
-function checkAllTrapped() {
-  let newlyTrapped = 0
+// Cats can enter empty cells or cells occupied by a trapped cat (cheese)
+function canCatEnter(x, y) {
+  if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return false
+  const cell = grid.value[y][x]
+  if (cell !== CELL_TYPES.EMPTY) return false
+  // Blocked if an active cat occupies it
+  if (cats.value.some((c) => c.x === x && c.y === y && !c.trapped)) return false
+  // Allowed if occupied by a trapped cat (cheese)
+  return true
+}
 
-  cats.value.forEach((cat) => {
-    if (!cat.trapped && isTrapped(cat.x, cat.y)) {
-      cat.trapped = true
-      newlyTrapped++
-      score.value += 100
-    }
-  })
+function reviveCheeseAt(x, y) {
+  const cheese = cats.value.find((c) => c.x === x && c.y === y && c.trapped)
+  if (cheese) {
+    cheese.trapped = false
+    // Adjust trappedCats/score because cheese reverted
+    trappedCats.value = cats.value.filter((c) => c.trapped).length
+  }
+}
+
+function checkAllTrapped() {
+  // Fixpoint evaluation: a cat is trapped if all orthogonal neighbors are blocked by walls/blocks/out-of-bounds or occupied by cats that are (already) trapped in this pass.
+  let changed = true
+  let newlyTrappedCount = 0
+
+  while (changed) {
+    changed = false
+
+    cats.value.forEach((cat, idx) => {
+      if (cat.trapped) return
+
+      const directions = [
+        { dx: 0, dy: -1 },
+        { dx: 0, dy: 1 },
+        { dx: -1, dy: 0 },
+        { dx: 1, dy: 0 },
+      ]
+
+      let hasEscape = false
+      for (const dir of directions) {
+        const nx = cat.x + dir.dx
+        const ny = cat.y + dir.dy
+        // If move is within board and the cell is empty and not occupied by a non-trapped cat, it's an escape
+        if (
+          nx >= 0 &&
+          nx < GRID_SIZE &&
+          ny >= 0 &&
+          ny < GRID_SIZE &&
+          grid.value[ny][nx] === CELL_TYPES.EMPTY &&
+          // occupied by another cat that is NOT trapped is considered an escape; trapped cats block
+          !cats.value.some((c) => c.x === nx && c.y === ny && !c.trapped)
+        ) {
+          hasEscape = true
+          break
+        }
+      }
+
+      if (!hasEscape) {
+        cat.trapped = true
+        newlyTrappedCount++
+        score.value += 100
+        changed = true
+      }
+    })
+  }
 
   trappedCats.value = cats.value.filter((c) => c.trapped).length
 
@@ -246,6 +364,7 @@ function checkAllTrapped() {
 }
 
 function isTrapped(x, y) {
+  // A cat is trapped if it has no valid orthogonal moves.
   const directions = [
     { dx: 0, dy: -1 },
     { dx: 0, dy: 1 },
@@ -254,15 +373,12 @@ function isTrapped(x, y) {
   ]
 
   for (const dir of directions) {
-    const newX = x + dir.dx
-    const newY = y + dir.dy
-
-    if (newX < 0 || newX >= GRID_SIZE || newY < 0 || newY >= GRID_SIZE) continue
-
-    const cell = grid.value[newY][newX]
-    if (cell === CELL_TYPES.EMPTY) return false
+    const nx = x + dir.dx
+    const ny = y + dir.dy
+    if (isValidCatMove(nx, ny)) {
+      return false
+    }
   }
-
   return true
 }
 
@@ -283,18 +399,29 @@ function startNewGame() {
 
 function startSinglePlayer() {
   showMenu.value = false
+  twoPlayer.value = false
   level.value = 1
   score.value = 0
   startNewGame()
 }
 
 function startTwoPlayers() {
-  // Placeholder: keep menu open or implement 2P init later
-  alert('Two Players mode is work-in-progress.')
+  showMenu.value = false
+  twoPlayer.value = true
+  level.value = 1
+  score.value = 0
+  // Position players apart
+  mousePos.x = 5
+  mousePos.y = 5
+  mouse2Pos.x = GRID_SIZE - 6
+  mouse2Pos.y = GRID_SIZE - 6
+  startNewGame()
 }
 
 function openHowTo() {
-  alert('How to Play: Use arrow keys or WASD to move the mouse. Push blocks to trap cats on all four sides.')
+  alert(
+    'How to Play: Use arrow keys or WASD to move the mouse. Push blocks to trap cats on all four sides.',
+  )
 }
 
 function openSettings() {
@@ -331,6 +458,14 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
 }
 
+html,
+body,
+#app {
+  border: 5px solid red;
+  min-height: 100vh;
+  height: 100%;
+}
+
 body {
   font-family: 'Arial', sans-serif;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -339,10 +474,12 @@ body {
   align-items: center;
   min-height: 100vh;
   padding: 20px;
+  height: 100%;
 }
 
 #app {
   text-align: center;
+  border: 5px solid red;
 }
 
 .game-container {
@@ -352,6 +489,8 @@ body {
   border-radius: 12px;
   padding: 20px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  height: 100%;
+  border: 5px solid red;
 }
 
 .game-board {
@@ -376,7 +515,7 @@ body {
   justify-content: center;
   font-size: 24px;
   transition: all 0.1s;
-  color: gray;
+  color: white;
 }
 
 .empty {

@@ -28,6 +28,8 @@ const props = defineProps({
   grid: { type: Array, required: true },
   cats: { type: Array, required: true },
   mousePos: { type: Object, required: true },
+  mouse2Pos: { type: Object, required: false },
+  twoPlayer: { type: Boolean, required: false, default: false },
   score: { type: Number, required: true },
   level: { type: Number, required: true },
   trappedCats: { type: Number, required: true },
@@ -61,6 +63,9 @@ function getCellClass(x, y) {
   if (props.mousePos.x === x && props.mousePos.y === y) {
     return 'mouse'
   }
+  if (props.twoPlayer && props.mouse2Pos && props.mouse2Pos.x === x && props.mouse2Pos.y === y) {
+    return 'mouse mouse2'
+  }
 
   const cat = props.cats.find((c) => c.x === x && c.y === y)
   if (cat) return cat.trapped ? 'cat trapped' : 'cat'
@@ -72,6 +77,8 @@ function getCellClass(x, y) {
 
 function getCellContent(x, y) {
   if (props.mousePos.x === x && props.mousePos.y === y) return '🐭'
+  if (props.twoPlayer && props.mouse2Pos && props.mouse2Pos.x === x && props.mouse2Pos.y === y)
+    return '🐭'
   const cat = props.cats.find((c) => c.x === x && c.y === y)
   if (cat) return cat.trapped ? '🧀' : '🐱'
   return ''
@@ -122,6 +129,9 @@ function getCellContent(x, y) {
   border-radius: 50%;
   position: relative;
 }
+.mouse2 {
+  background: #6ee7b7;
+}
 
 .cat {
   background: #ff6b6b;
@@ -155,7 +165,7 @@ function getCellContent(x, y) {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  color: gray;
+  color: white;
   font-size: 32px;
   font-weight: bold;
 }

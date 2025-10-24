@@ -7,7 +7,7 @@ const emit = defineEmits(['start-1p', 'start-2p', 'how-to', 'settings'])
     <div class="start-menu">
       <h1 class="title">🐭 Rodents' Revenge</h1>
       <button class="menu-btn primary" @click="emit('start-1p')">1 Player</button>
-      <button class="menu-btn" @click="emit('start-2p')" disabled>2 Players (WIP)</button>
+      <button class="menu-btn" @click="emit('start-2p')">2 Player</button>
       <button class="menu-btn" @click="emit('how-to')">How to Play</button>
       <button class="menu-btn" @click="emit('settings')">Settings</button>
     </div>
@@ -58,5 +58,4 @@ const emit = defineEmits(['start-1p', 'start-2p', 'how-to', 'settings'])
 .menu-btn.primary { background: #667eea; border-color: #5568d3; }
 .menu-btn.primary:hover { background: #5568d3; }
 
-button[disabled] { opacity: 0.6; cursor: not-allowed; }
 </style>
