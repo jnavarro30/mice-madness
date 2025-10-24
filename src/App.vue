@@ -2,61 +2,32 @@
 
 <template>
   <div class="game-container">
-    <h1 style="color: #667eea; margin-bottom: 20px">🐭 Rodents' Revenge 🐭</h1>
-
-    <div class="game-header">
-      <div class="stat">
-        <div>Score</div>
-        <div class="stat-value">{{ score }}</div>
-      </div>
-      <div class="stat">
-        <div>Level</div>
-        <div class="stat-value">{{ level }}</div>
-      </div>
-      <div class="stat">
-        <div>Trapped Cats</div>
-        <div class="stat-value">{{ trappedCats }} / {{ totalCats }}</div>
-      </div>
-    </div>
-
-    <div class="game-board">
-      <div class="grid" :style="gridStyle">
-        <div
-          v-for="cell in flattenedGrid"
-          :key="cell.key"
-          :class="getCellClass(cell.x, cell.y)"
-          class="cell"
-        >
-          {{ getCellContent(cell.x, cell.y) }}
-        </div>
-      </div>
-
-      <div v-if="gameOver || won" class="game-over-overlay">
-        <h2>{{ won ? '🎉 You Win! 🎉' : '💀 Game Over 💀' }}</h2>
-        <p>Final Score: {{ score }}</p>
-        <button class="button" @click="won ? nextLevel() : restartGame()">
-          {{ won ? 'Next Level' : 'Try Again' }}
-        </button>
-      </div>
-    </div>
-
-    <div class="instructions">
-      <h3>How to Play:</h3>
-      <ul>
-        <li>Use <strong>Arrow Keys</strong> or <strong>WASD</strong> to move</li>
-        <li>Push blocks to trap all the cats</li>
-        <li>A cat is trapped when surrounded by blocks/walls</li>
-        <li>Don't let the cats catch you!</li>
-        <li>Trap all cats to win the level</li>
-      </ul>
-    </div>
+    <!-- <h1 style="color: #667eea; margin-bottom: 20px">🐭 Rodents' Revenge 🐭</h1> -->
+    <GameHeader :score="score" :level="level" :trapped-cats="trappedCats" :total-cats="totalCats" />
+    <GameBoard
+      :grid="grid"
+      :cats="cats"
+      :mouse-pos="mousePos"
+      :score="score"
+      :level="level"
+      :trapped-cats="trappedCats"
+      :total-cats="totalCats"
+      :game-over="gameOver"
+      :won="won"
+      :grid-size="GRID_SIZE"
+      :cell-size="CELL_SIZE"
+      @restart="restartGame"
+      @next="nextLevel"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import GameBoard from './components/GameBoard.vue'
+import GameHeader from './components/GameHeader.vue'
 
-const GRID_SIZE = 15
+const GRID_SIZE = 20
 const CELL_SIZE = 32
 const CELL_TYPES = {
   EMPTY: 0,
@@ -75,26 +46,7 @@ const trappedCats = ref(0)
 let gameLoopInterval = null
 
 // 🧮 COMPUTED
-const gridStyle = computed(() => ({
-  gridTemplateColumns: `repeat(${GRID_SIZE}, ${CELL_SIZE}px)`,
-  gridTemplateRows: `repeat(${GRID_SIZE}, ${CELL_SIZE}px)`,
-}))
-
 const totalCats = computed(() => cats.value.length)
-
-const flattenedGrid = computed(() => {
-  const flattened = []
-  for (let y = 0; y < grid.value.length; y++) {
-    for (let x = 0; x < grid.value[y].length; x++) {
-      flattened.push({
-        x,
-        y,
-        key: `${x}-${y}`,
-      })
-    }
-  }
-  return flattened
-})
 
 // 🧩 METHODS
 function initializeGrid() {
@@ -138,28 +90,6 @@ function initializeCats() {
   cats.value = newCats
 }
 
-function getCellClass(x, y) {
-  const cell = grid.value[y]?.[x]
-
-  if (mousePos.x === x && mousePos.y === y) {
-    return 'mouse'
-  }
-
-  const cat = cats.value.find((c) => c.x === x && c.y === y)
-  if (cat) return cat.trapped ? 'cat trapped' : 'cat'
-
-  if (cell === CELL_TYPES.WALL) return 'wall'
-  if (cell === CELL_TYPES.BLOCK) return 'block'
-  return 'empty'
-}
-
-function getCellContent(x, y) {
-  if (mousePos.x === x && mousePos.y === y) return '🐭'
-  const cat = cats.value.find((c) => c.x === x && c.y === y)
-  if (cat) return cat.trapped ? '🧀' : '🐱'
-  return ''
-}
-
 function handleKeyDown(e) {
   if (gameOver.value || won.value) return
 
@@ -188,24 +118,52 @@ function moveMouse(dx, dy) {
   if (targetCell === CELL_TYPES.WALL) return
 
   if (targetCell === CELL_TYPES.BLOCK) {
-    const pushX = newX + dx
-    const pushY = newY + dy
+    // Find contiguous chain of blocks in the push direction
+    let chainEndX = newX
+    let chainEndY = newY
+    while (true) {
+      const nextX = chainEndX + dx
+      const nextY = chainEndY + dy
+      if (nextX < 0 || nextX >= GRID_SIZE || nextY < 0 || nextY >= GRID_SIZE) {
+        // Out of bounds: cannot push
+        return
+      }
+      const nextCell = grid.value[nextY][nextX]
+      if (nextCell === CELL_TYPES.BLOCK) {
+        // Continue extending the chain
+        chainEndX = nextX
+        chainEndY = nextY
+        continue
+      }
+      // First non-block encountered
+      // Only allow push if this cell is empty and not occupied by a cat
+      if (
+        nextCell === CELL_TYPES.EMPTY &&
+        !cats.value.some((c) => c.x === nextX && c.y === nextY)
+      ) {
+        // Shift the entire chain forward by one cell, from the end backward
+        let curX = chainEndX
+        let curY = chainEndY
+        while (!(curX === newX && curY === newY)) {
+          const prevX = curX - dx
+          const prevY = curY - dy
+          grid.value[curY][curX] = grid.value[prevY][prevX]
+          curX = prevX
+          curY = prevY
+        }
+        // Move the first block into the adjacent cell to the chain end
+        grid.value[nextY][nextX] = CELL_TYPES.BLOCK
+        // Vacate the original adjacent cell where the mouse will step
+        grid.value[newY][newX] = CELL_TYPES.EMPTY
 
-    if (
-      pushX >= 0 &&
-      pushX < GRID_SIZE &&
-      pushY >= 0 &&
-      pushY < GRID_SIZE &&
-      grid.value[pushY][pushX] === CELL_TYPES.EMPTY &&
-      !cats.value.some((c) => c.x === pushX && c.y === pushY)
-    ) {
-      grid.value[pushY][pushX] = CELL_TYPES.BLOCK
-      grid.value[newY][newX] = CELL_TYPES.EMPTY
-      mousePos.x = newX
-      mousePos.y = newY
-      checkAllTrapped()
+        // Move mouse into the space vacated by the first block
+        mousePos.x = newX
+        mousePos.y = newY
+        checkAllTrapped()
+      }
+      // If the next cell is not empty (wall or cat or out of bounds), cannot push
+      return
     }
-    return
   }
 
   if (cats.value.some((c) => c.x === newX && c.y === newY && !c.trapped)) {
@@ -357,29 +315,12 @@ body {
 }
 
 .game-container {
-  background: white;
+  display: flex;
+  flex-direction: column;
+  background: black;
   border-radius: 12px;
   padding: 20px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-}
-
-.game-header {
-  display: flex;
-  justify-content: space-around;
-  margin-bottom: 20px;
-  gap: 20px;
-}
-
-.stat {
-  background: #f0f0f0;
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-weight: bold;
-}
-
-.stat-value {
-  color: #667eea;
-  font-size: 24px;
 }
 
 .game-board {
@@ -387,6 +328,7 @@ body {
   border: 3px solid #333;
   background: #e0e0e0;
   position: relative;
+  margin: 0 auto;
 }
 
 .grid {
@@ -403,6 +345,7 @@ body {
   justify-content: center;
   font-size: 24px;
   transition: all 0.1s;
+  color: gray;
 }
 
 .empty {
