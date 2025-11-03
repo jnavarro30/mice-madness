@@ -1,5 +1,3 @@
-<script setup></script>
-
 <template>
   <div class="game-container">
     <GameHeader :score="score" :level="level" :trapped-cats="trappedCats" :total-cats="totalCats" />
@@ -27,11 +25,18 @@
       :won="won"
       :grid-size="GRID_SIZE"
       :cell-size="CELL_SIZE"
+      :top-dog-active="topDogActive"
       @restart="restartGame"
       @next="nextLevel"
     />
   </div>
 </template>
+
+<script>
+export default {
+  computed: {},
+}
+</script>
 
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
@@ -48,7 +53,7 @@ const CELL_TYPES = {
 }
 
 const grid = ref([])
-const mousePos = reactive({ x: 7, y: 7 })
+const mousePos = reactive({ x: Math.floor(GRID_SIZE / 2), y: Math.floor(GRID_SIZE / 2) })
 const mouse2Pos = reactive({ x: 12, y: 12 })
 const twoPlayer = ref(false)
 const cats = ref([])
@@ -60,11 +65,15 @@ const trappedCats = ref(0)
 let gameLoopInterval = null
 const showMenu = ref(true)
 
-// 🧮 COMPUTED
+// TopDog power-up state (replace omni color logic)
+const topDogActive = ref(false)
+let topDogTimeout = null
+
+// computed
 const totalCats = computed(() => cats.value.length)
 
-// 🧩 METHODS
-function initializeGrid() {
+// methods
+const initializeGrid = () => {
   const newGrid = Array(GRID_SIZE)
     .fill(null)
     .map(() => Array(GRID_SIZE).fill(CELL_TYPES.EMPTY))
@@ -76,7 +85,7 @@ function initializeGrid() {
     newGrid[i][GRID_SIZE - 1] = CELL_TYPES.WALL
   }
 
-  const blockCount = 40 + level.value * 5
+  const blockCount = 100 - level.value * 5
   for (let i = 0; i < blockCount; i++) {
     let x, y
     do {
@@ -90,17 +99,23 @@ function initializeGrid() {
 }
 
 function initializeCats() {
-  const newCats = []
-  const catCount = 3 + Math.floor(level.value / 2)
+  // Place cats at the four corners inside the walls
+  const innerMax = GRID_SIZE - 2
+  const corners = [
+    { x: 1, y: 1 }, // top-left
+    { x: innerMax, y: 1 }, // top-right
+    { x: 1, y: innerMax }, // bottom-left
+    { x: innerMax, y: innerMax }, // bottom-right
+  ]
 
-  for (let i = 0; i < catCount; i++) {
-    let x, y
-    do {
-      x = Math.floor(Math.random() * (GRID_SIZE - 2)) + 1
-      y = Math.floor(Math.random() * (GRID_SIZE - 2)) + 1
-    } while (grid.value[y][x] !== CELL_TYPES.EMPTY || (Math.abs(x - 7) < 3 && Math.abs(y - 7) < 3))
-    newCats.push({ x, y, trapped: false })
-  }
+  const newCats = corners
+    // Ensure corner cells are empty (not blocks); if a block is there, clear it
+    .map((pos) => {
+      if (grid.value[pos.y][pos.x] !== CELL_TYPES.EMPTY) {
+        grid.value[pos.y][pos.x] = CELL_TYPES.EMPTY
+      }
+      return { x: pos.x, y: pos.y, trapped: false }
+    })
 
   cats.value = newCats
 }
@@ -139,6 +154,15 @@ function moveMouseBy(playerPos, dx, dy) {
   }
 
   if (targetCell === CELL_TYPES.WALL) return
+
+  // If moving onto a trapped cat (cheese), activate TopDog and remove the cheese
+  const cheeseAtTarget = cats.value.find((c) => c.x === newX && c.y === newY && c.trapped)
+  if (playerPos === mousePos && cheeseAtTarget) {
+    activateTopDog()
+    // remove the cheese from the board
+    const idx = cats.value.findIndex((c) => c.x === newX && c.y === newY && c.trapped)
+    if (idx !== -1) cats.value.splice(idx, 1)
+  }
 
   if (targetCell === CELL_TYPES.BLOCK) {
     // Find contiguous chain of blocks in the push direction
@@ -189,14 +213,31 @@ function moveMouseBy(playerPos, dx, dy) {
     }
   }
 
-  if (cats.value.some((c) => c.x === newX && c.y === newY && !c.trapped)) {
-    gameOver.value = true
-    return
+  // Handle collision with active cat
+  const activeCatIndex = cats.value.findIndex((c) => c.x === newX && c.y === newY && !c.trapped)
+  if (activeCatIndex !== -1) {
+    if (playerPos === mousePos && topDogActive.value) {
+      // Eat the cat during TopDog power-up
+      cats.value.splice(activeCatIndex, 1)
+      score.value += 200
+    } else {
+      gameOver.value = true
+      return
+    }
   }
 
   playerPos.x = newX
   playerPos.y = newY
   checkAllTrapped()
+}
+
+function activateTopDog() {
+  if (topDogTimeout) clearTimeout(topDogTimeout)
+  topDogActive.value = true
+  topDogTimeout = setTimeout(() => {
+    topDogActive.value = false
+    topDogTimeout = null
+  }, 5000)
 }
 
 function moveCats() {
@@ -292,6 +333,8 @@ function isValidCatMove(x, y) {
 // Cats can enter empty cells or cells occupied by a trapped cat (cheese)
 function canCatEnter(x, y) {
   if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return false
+  // A cat can always move onto the mouse position (this would trigger game over)
+  if (x === mousePos.x && y === mousePos.y) return true
   const cell = grid.value[y][x]
   if (cell !== CELL_TYPES.EMPTY) return false
   // Blocked if an active cat occupies it
@@ -310,7 +353,6 @@ function reviveCheeseAt(x, y) {
 }
 
 function checkAllTrapped() {
-  // Fixpoint evaluation: a cat is trapped if all orthogonal neighbors are blocked by walls/blocks/out-of-bounds or occupied by cats that are (already) trapped in this pass.
   let changed = true
   let newlyTrappedCount = 0
 
@@ -383,8 +425,9 @@ function isTrapped(x, y) {
 }
 
 function startNewGame() {
-  mousePos.x = 7
-  mousePos.y = 7
+  // Center the primary mouse at the grid center
+  mousePos.x = Math.floor(GRID_SIZE / 2)
+  mousePos.y = Math.floor(GRID_SIZE / 2)
   gameOver.value = false
   won.value = false
   trappedCats.value = 0
@@ -448,6 +491,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeyDown)
   if (gameLoopInterval) clearInterval(gameLoopInterval)
+  if (topDogTimeout) clearTimeout(topDogTimeout)
 })
 </script>
 
@@ -481,6 +525,8 @@ body {
   text-align: center;
   border: 5px solid red;
 }
+
+/* no CSS vars needed for TopDog */
 
 .game-container {
   display: flex;
@@ -533,7 +579,7 @@ body {
 }
 
 .mouse {
-  background: #90ee90;
+  background: #90ee90; /* base color */
   border-radius: 50%;
   position: relative;
 }

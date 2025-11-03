@@ -5,7 +5,7 @@ const emit = defineEmits(['start-1p', 'start-2p', 'how-to', 'settings'])
 <template>
   <div class="start-menu-backdrop">
     <div class="start-menu">
-      <h1 class="title">🐭 Rodents' Revenge</h1>
+      <h1 class="title">🐭 Mice Madness</h1>
       <button class="menu-btn primary" @click="emit('start-1p')">1 Player</button>
       <button class="menu-btn" @click="emit('start-2p')">2 Player</button>
       <button class="menu-btn" @click="emit('how-to')">How to Play</button>
@@ -34,7 +34,7 @@ const emit = defineEmits(['start-1p', 'start-2p', 'how-to', 'settings'])
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
   border: 2px solid #333;
 }
 
@@ -51,11 +51,21 @@ const emit = defineEmits(['start-1p', 'start-2p', 'how-to', 'settings'])
   font-size: 16px;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.2s, transform 0.05s;
+  transition:
+    background 0.2s,
+    transform 0.05s;
 }
-.menu-btn:hover { background: #353535; }
-.menu-btn:active { transform: translateY(1px); }
-.menu-btn.primary { background: #667eea; border-color: #5568d3; }
-.menu-btn.primary:hover { background: #5568d3; }
-
+.menu-btn:hover {
+  background: #353535;
+}
+.menu-btn:active {
+  transform: translateY(1px);
+}
+.menu-btn.primary {
+  background: #667eea;
+  border-color: #5568d3;
+}
+.menu-btn.primary:hover {
+  background: #5568d3;
+}
 </style>

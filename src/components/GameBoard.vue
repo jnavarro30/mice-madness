@@ -38,6 +38,7 @@ const props = defineProps({
   won: { type: Boolean, required: true },
   gridSize: { type: Number, required: true },
   cellSize: { type: Number, required: true },
+  topDogActive: { type: Boolean, required: false, default: false },
 })
 
 const emit = defineEmits(['restart', 'next'])
@@ -76,11 +77,13 @@ function getCellClass(x, y) {
 }
 
 function getCellContent(x, y) {
-  if (props.mousePos.x === x && props.mousePos.y === y) return '🐭'
+  if (props.mousePos.x === x && props.mousePos.y === y) {
+    return props.topDogActive ? '🐕' : '🐁'
+  }
   if (props.twoPlayer && props.mouse2Pos && props.mouse2Pos.x === x && props.mouse2Pos.y === y)
-    return '🐭'
+    return '🐀'
   const cat = props.cats.find((c) => c.x === x && c.y === y)
-  if (cat) return cat.trapped ? '🧀' : '🐱'
+  if (cat) return cat.trapped ? '🧀' : '🐈'
   return ''
 }
 </script>
@@ -125,17 +128,18 @@ function getCellContent(x, y) {
 }
 
 .mouse {
-  background: #90ee90;
-  border-radius: 50%;
+  background: var(--omni-color, #90ee90);
+  /* remove conflicting override */
+  /* border-radius: 50%; */
   position: relative;
 }
-.mouse2 {
+/* .mouse2 {
   background: #6ee7b7;
-}
+} */
 
 .cat {
   background: #ff6b6b;
-  border-radius: 50%;
+  /* border-radius: 50%; */
   position: relative;
 }
 
